@@ -1,2 +1,2 @@
 # global-index-api
-World map view of different country attribues
+World map view of different country attributes
