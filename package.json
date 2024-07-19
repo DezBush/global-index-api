@@ -4,8 +4,8 @@
   "description": "World map view of different country attribues",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "dev": "nodemon api/index.js",
+    "start": "api/index.js"
   },
   "repository": {
     "type": "git",
