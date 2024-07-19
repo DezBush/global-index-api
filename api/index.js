@@ -5,6 +5,7 @@ const express = require("express");
 const axios = require("axios")
 const { MongoClient } = require('mongodb');
 const bodyParser = require('body-parser');
+const { swaggerUi, specs } = require('./swagger');
 
 const app = express();
 app.use(express.json());
@@ -30,10 +31,41 @@ connectToDb().then(() => {
     process.exit(1);
 });
 
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: Welcome message
+ *     responses:
+ *       200:
+ *         description: Returns a welcome message
+ */
 app.get('/', (req,res) => {
     res.send("Hello from global index WebApp");
 });
 
+/**
+ * @swagger
+ * /records/{countryId}:
+ *   get:
+ *     summary: Get records by country ID
+ *     parameters:
+ *       - in: path
+ *         name: countryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the country
+ *     responses:
+ *       200:
+ *         description: Returns records for the specified country
+ *       404:
+ *         description: Record not found
+ *       500:
+ *         description: Error fetching records
+ */
 app.get('/records/:countryId', async (req, res) => {
     const collection = db.collection(collectionName);
     const countryId = req.params.countryId;
