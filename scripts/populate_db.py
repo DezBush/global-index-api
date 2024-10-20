@@ -1,11 +1,10 @@
 import os
 import pandas as pd
 import wbgapi as wb
-from pymongo import MongoClient
+import psycopg2
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-load_dotenv()
 
 def read_indicators_from_file(file_path):
     with open(file_path, 'r') as f:
@@ -13,48 +12,87 @@ def read_indicators_from_file(file_path):
     
     return indicators
 
-def get_indicator_data(country, indicators):
-    current_document = {'country':country, 'indicators':[]}
-    for indicator in indicators:                                                                             
-        try:
-            current_document['indicators'].append({indicator:wb.data.get(indicator, country, mrnev=1)['value']})
-        except Exception as e:
-            if str(e) == 'APIError':
-                current_document['indicators'].append({indicator:wb.data.get(indicator, country)['value']})
-    return current_document
 
 def populate(indicators):
-    countries = [country['id'] for country in wb.economy.list()]
-    data = []
+    data = pd.DataFrame(columns=[])
+    country_info = wb.economy.DataFrame(skipAggs=True).reset_index()
+    countries = country_info[['id', 'name', 'capitalCity']]
+    result = []
 
-    print("Gathering Country Data...")
-    for country in tqdm(countries):
-        cur = get_indicator_data(country, indicators)
-        data.append(cur)
-    print("Data Gathered!")
+    print("Gathering Data...")
+    for indicator in tqdm(indicators):
+        data = wb.data.DataFrame(indicator, economy=countries['id'].tolist(), timeColumns=True, mrnev=1).reset_index()
+        data = data.rename(columns={"economy": "id", indicator: "indicator_value", f"{indicator}:T":"year", "name":"country_name", "capitalCity":"capital_city"})
+        data['indicator_code'] = indicator
+        data['indicator_name'] = wb.series.info(indicator).table()[0][1]
+        result.append(data)
 
-    mongodb_url = os.getenv('MONGODB_URL')
-    port = int(os.getenv('PORT'))
+    indicator_data_df = pd.concat(result, ignore_index=True)
+    final_table = pd.merge(indicator_data_df, country_info, how="outer", on="id")
+    final_table = final_table.drop(columns=['aggregate','longitude','latitude','region','adminregion','lendingType','incomeLevel'])
+    final_table = final_table.rename(columns={'id':'country_code', 'indicator_value':'value', 'name':'country_name', "capitalCity":"capital_city"})
+
+    print("Inserting Data...")
+    load_dotenv()
+    conn = psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT"),
+        database=os.getenv("DATABASE_NAME"),  
+        user=os.getenv("DB_USERNAME"),
+        password=os.getenv("DB_PASSWORD"),
+    )
+    cursor = conn.cursor()
     
     try:
-        print("Inserting Data...")
-        client = MongoClient(mongodb_url,port)
-        db = client['global-index']
-        table = db['countries']
-        table.insert_many(data)
-        print("Data has been successfully inserted into MongoDB!")
+        cursor.execute("DROP TABLE IF EXISTS databank")
+        conn.commit()
+
+        create_table_query = '''
+        CREATE TABLE IF NOT EXISTS databank (
+            id SERIAL PRIMARY KEY,
+            country_code VARCHAR(5),
+            country_name VARCHAR(100),
+            capital_city VARCHAR(100),
+            indicator_code VARCHAR(50),
+            indicator_name VARCHAR(200),
+            year INT,
+            value DECIMAL
+        );
+        '''
+
+        cursor.execute(create_table_query)
+        conn.commit()
+
+        insert_query = '''
+        INSERT INTO databank (
+            country_code, country_name, capital_city,
+            indicator_code, indicator_name, year, value
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        '''
+
+        for _, row in tqdm(final_table.iterrows()):
+            cursor.execute(insert_query, (
+                row['country_code'], row['country_name'], row['capital_city'], 
+                row['indicator_code'], row['indicator_name'], 
+                row['year'], row['value']
+            ))
+        conn.commit()
+        print("Data has been successfully inserted!")
     except Exception as e:
-        print(e)
+        print(f"An error has occured: {e}")
+        conn.rollback()
         return
-    
-    print("Completed!")
-    return
+    finally:
+        cursor.close()
+        conn.close()
+        return
+
 
 def main():
-    print('Populating database...')
     indicators = read_indicators_from_file('scripts/indicators.txt')
     populate(indicators)
     return
+
 
 if __name__ =='__main__':
     main()
