@@ -1,23 +1,37 @@
 const dotenv = require('dotenv');
-dotenv.config();
+const path = require('path');
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const express = require("express");
+const cors = require("cors");
 const swaggerDocs = require('./swagger');
 const swaggerUi = require('swagger-ui-express');
 const { spawn } = require('child_process');
 const cron = require('node-cron');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(express.json());
-const port = process.env.PORT;
-const dbName = 'global-index';
-const collectionName = 'countries';
+app.use(cors());
+
+const port = process.env.API_PORT || 5000;
+
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DATABASE_NAME,
+});
 
 async function connectToDb() {
-    const client = new MongoClient(process.env.API_PORT);
-    await client.connect();
-    db = client.db(dbName);
-    console.log('Connected to database');
+  try {
+    await pool.query('SELECT 1');
+    console.log('Connected to PostgreSQL database');
+  } catch (error) {
+    console.error('Error connecting to PostgreSQL:', error);
+    process.exit(1);
+  }
 }
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
@@ -49,7 +63,13 @@ app.get('/', (req,res) => {
  *         description: Error fetching records
  */
 app.get('/records', async (req, res) => {
-  res.send('Records Accessed');
+  try {
+    const result = await pool.query('SELECT * FROM databank');
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching records:', error);
+    res.status(500).json({ error: 'Error fetching records' });
+  }
 });
 
 /**
@@ -73,20 +93,23 @@ app.get('/records', async (req, res) => {
  *         description: Error fetching records
  */
 app.get('/records/:countryId', async (req, res) => {
-  res.send('Records Params Accessed');
+  const { countryId } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM databank WHERE country_code = $1',
+      [countryId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Record not found' });
+    }
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching record:', error);
+    res.status(500).json({ error: 'Error fetching record' });
+  }
 });
 
-connectToDb().then(() => {
-  console.log('Connected to MongoDB');
-  app.listen(port, '0.0.0.0',() => {
-      console.log(`Server has started on port ${port}`);
-  });
-}).catch((error) => {
-    console.error('Error connecting to MongoDB:', error);
-    process.exit(1);
-});
-
-//Update DB Scripts
+// Update DB Script
 function updateDB() {
   const python = spawn("python", ["scripts/populate_db.py"]);
   
@@ -103,7 +126,19 @@ function updateDB() {
   python.on("close", (code) => {
     console.log(`Script finished!`);
   });
-
 }
 
+// Runs every year
 cron.schedule('0 0 1 1 *', updateDB);
+
+// Start Server
+connectToDb()
+  .then(() => {
+    updateDB();
+    app.listen(port, 'localhost', () => {
+      console.log(`Server has started on port ${port}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Error initializing server:', error);
+  });
