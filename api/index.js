@@ -208,7 +208,7 @@ app.get('/records/country/:countryId/:indicatorCode', async (req, res) => {
 
 // Update DB Script
 function updateDB() {
-  const python = spawn("python", ["scripts/populate_db.py"]);
+  const python = spawn("venv/bin/python3", [path.join(__dirname, '../scripts/your_script.py')]);
   
   console.log("Update DB Script Called");
 
