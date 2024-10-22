@@ -92,12 +92,109 @@ app.get('/records', async (req, res) => {
  *       500:
  *         description: Error fetching records
  */
-app.get('/records/:countryId', async (req, res) => {
+app.get('/records/country/:countryId', async (req, res) => {
   const { countryId } = req.params;
   try {
     const result = await pool.query(
       'SELECT * FROM databank WHERE country_code = $1',
       [countryId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Record not found' });
+    }
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching record:', error);
+    res.status(500).json({ error: 'Error fetching record' });
+  }
+});
+
+/**
+ * @swagger
+ * /records/indicator/{indicatorCode}:
+ *   get:
+ *     summary: Get records by indicator code
+ *     parameters:
+ *       - in: path
+ *         name: indicatorCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The code for the indicator (e.g., GDP, POP)
+ *     responses:
+ *       200:
+ *         description: Returns all records with the specified indicator code
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   indicator_code:
+ *                     type: string
+ *                     description: The indicator code (e.g., GDP)
+ *                   value:
+ *                     type: number
+ *                     description: The value of the indicator
+ *                   year:
+ *                     type: integer
+ *                     description: The year of the record
+ *       404:
+ *         description: Indicator not found
+ *       500:
+ *         description: Error fetching the indicator records
+ */
+app.get('/records/indicator/:indicatorCode', async (req, res) => {
+  const { indicatorCode } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM databank WHERE indicator_code = $1',
+      [indicatorCode]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Indicator not found' });
+    }
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching indicator:', error);
+    res.status(500).json({ error: 'Error fetching indicator' });
+  }
+});
+
+/**
+ * @swagger
+ * /records/country/{countryId}/{indicatorCode}:
+ *   get:
+ *     summary: Get a specific indicator value for a country
+ *     parameters:
+ *       - in: path
+ *         name: countryId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the country (e.g., US, CA)
+ *       - in: path
+ *         name: indicatorCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The code for the specific indicator (e.g., GDP, POP)
+ *     responses:
+ *       200:
+ *         description: Returns the indicator value for the country
+ *       404:
+ *         description: Indicator not found for the country
+ *       500:
+ *         description: Error fetching the indicator value
+ */
+app.get('/records/country/:countryId/:indicatorCode', async (req, res) => {
+  const { countryId, indicatorCode } = req.params;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM databank WHERE country_code = $1 AND indicator_code = $2',
+      [countryId, indicatorCode]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Record not found' });
