@@ -120,7 +120,7 @@ app.get('/records/country/:countryId', async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: The code for the indicator (e.g., GDP, POP)
+ *         description: The code for the indicator
  *     responses:
  *       200:
  *         description: Returns all records with the specified indicator code
@@ -133,7 +133,7 @@ app.get('/records/country/:countryId', async (req, res) => {
  *                 properties:
  *                   indicator_code:
  *                     type: string
- *                     description: The indicator code (e.g., GDP)
+ *                     description: The indicator code
  *                   value:
  *                     type: number
  *                     description: The value of the indicator
@@ -173,13 +173,13 @@ app.get('/records/indicator/:indicatorCode', async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: The ID of the country (e.g., US, CA)
+ *         description: The ID of the country
  *       - in: path
  *         name: indicatorCode
  *         required: true
  *         schema:
  *           type: string
- *         description: The code for the specific indicator (e.g., GDP, POP)
+ *         description: The code for the specific indicator
  *     responses:
  *       200:
  *         description: Returns the indicator value for the country
@@ -208,8 +208,9 @@ app.get('/records/country/:countryId/:indicatorCode', async (req, res) => {
 
 // Update DB Script
 function updateDB() {
-  const python = spawn("venv/bin/python3", [path.join(__dirname, '../scripts/your_script.py')]);
-  
+  const scriptPath = path.join(__dirname, "scripts/populate_db.py");
+  const python = spawn("python", [scriptPath]);
+
   console.log("Update DB Script Called");
 
   python.stdout.on("data", (data) => {
@@ -221,7 +222,11 @@ function updateDB() {
   });
 
   python.on("close", (code) => {
-    console.log(`Script finished!`);
+    if (code === 0) {
+      console.log("Script finished successfully!");
+    } else {
+      console.error(`Script finished with code: ${code}`);
+    }
   });
 }
 

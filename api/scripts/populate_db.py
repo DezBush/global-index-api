@@ -4,6 +4,7 @@ import wbgapi as wb
 import psycopg2
 from dotenv import load_dotenv
 from tqdm import tqdm
+from pathlib import Path
 
 
 def read_indicators_from_file(file_path):
@@ -21,11 +22,15 @@ def populate(indicators):
 
     print("Gathering Data...")
     for indicator in tqdm(indicators):
-        data = wb.data.DataFrame(indicator, economy=countries['id'].tolist(), timeColumns=True, mrnev=1).reset_index()
-        data = data.rename(columns={"economy": "id", indicator: "indicator_value", f"{indicator}:T":"year", "name":"country_name", "capitalCity":"capital_city"})
-        data['indicator_code'] = indicator
-        data['indicator_name'] = wb.series.info(indicator).table()[0][1]
-        result.append(data)
+        try:
+            data = wb.data.DataFrame(indicator, economy=countries['id'].tolist(), timeColumns=True, mrnev=1).reset_index()
+            data = data.rename(columns={"economy": "id", indicator: "indicator_value", f"{indicator}:T":"year", "name":"country_name", "capitalCity":"capital_city"})
+            data['indicator_code'] = indicator
+            data['indicator_name'] = wb.series.info(indicator).table()[0][1]
+            result.append(data)
+        except:
+            print(f"Indicator Missing From WBGAPI: {indicator}")
+            continue
 
     indicator_data_df = pd.concat(result, ignore_index=True)
     final_table = pd.merge(indicator_data_df, country_info, how="outer", on="id")
@@ -33,7 +38,8 @@ def populate(indicators):
     final_table = final_table.rename(columns={'id':'country_code', 'indicator_value':'value', 'name':'country_name', "capitalCity":"capital_city"})
 
     print("Inserting Data...")
-    load_dotenv()
+    env_path = Path(__file__).parent / '.env'
+    load_dotenv(dotenv_path=env_path)
     conn = psycopg2.connect(
         host=os.getenv("DB_HOST"),
         port=os.getenv("DB_PORT"),
@@ -89,7 +95,8 @@ def populate(indicators):
 
 
 def main():
-    indicators = read_indicators_from_file('scripts/indicators.txt')
+    indicators_file_path = Path(__file__).parent / 'indicators.txt'
+    indicators = read_indicators_from_file(indicators_file_path)
     populate(indicators)
     return
 
