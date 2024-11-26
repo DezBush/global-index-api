@@ -1,8 +1,6 @@
-import os
 import pandas as pd
 import wbgapi as wb
-import psycopg2
-from dotenv import load_dotenv
+import sqlite3
 from tqdm import tqdm
 from pathlib import Path
 
@@ -38,15 +36,8 @@ def populate(indicators):
     final_table = final_table.rename(columns={'id':'country_code', 'indicator_value':'value', 'name':'country_name', "capitalCity":"capital_city"})
 
     print("Inserting Data...")
-    env_path = Path(__file__).parent / '.env'
-    load_dotenv(dotenv_path=env_path)
-    conn = psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        database=os.getenv("DATABASE_NAME"),  
-        user=os.getenv("DB_USERNAME"),
-        password=os.getenv("DB_PASSWORD"),
-    )
+    db_path = Path(__file__).parent.parent / 'databank.db'
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     try:
@@ -55,14 +46,14 @@ def populate(indicators):
 
         create_table_query = '''
         CREATE TABLE IF NOT EXISTS databank (
-            id SERIAL PRIMARY KEY,
-            country_code VARCHAR(5),
-            country_name VARCHAR(100),
-            capital_city VARCHAR(100),
-            indicator_code VARCHAR(50),
-            indicator_name VARCHAR(200),
-            year INT,
-            value DECIMAL
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            country_code TEXT,
+            country_name TEXT,
+            capital_city TEXT,
+            indicator_code TEXT,
+            indicator_name TEXT,
+            year INTEGER,
+            value REAL
         );
         '''
 
@@ -73,7 +64,7 @@ def populate(indicators):
         INSERT INTO databank (
             country_code, country_name, capital_city,
             indicator_code, indicator_name, year, value
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         '''
 
         for _, row in tqdm(final_table.iterrows()):

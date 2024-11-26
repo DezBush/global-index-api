@@ -8,7 +8,7 @@ const swaggerDocs = require('./swagger');
 const swaggerUi = require('swagger-ui-express');
 const { spawn } = require('child_process');
 const cron = require('node-cron');
-const { Pool } = require('pg');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 app.use(express.json());
@@ -16,23 +16,15 @@ app.use(cors());
 
 const port = process.env.API_PORT || 5000;
 
-const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DATABASE_NAME,
-});
+const dbFilePath = path.resolve(__dirname, 'databank.db');
 
-async function connectToDb() {
-  try {
-    await pool.query('SELECT 1');
-    console.log('Connected to PostgreSQL database');
-  } catch (error) {
-    console.error('Error connecting to PostgreSQL:', error);
+const db = new sqlite3.Database(dbFilePath, (err) => {
+  if (err) {
+    console.error('Error connecting to SQLite database:', err.message);
     process.exit(1);
   }
-}
+  console.log('Connected to SQLite database');
+});
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
@@ -46,7 +38,15 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
  *         description: Returns a welcome message
  */
 app.get('/', (req,res) => {
-    res.send("Hello from the Global Index API! If you would like to see records, go to /records.");
+  const message = 
+    `Hello from the Global Index API!
+    - If you would like to see records, go to /records
+    - For individual country info for all indicators, go to /records/country/{countryId}
+    - For individual indicator info for all countries, go to /records/indicator/{indicatorCode}
+    - For specific country and ID records, go to /records/country/{countryId}/{indicatorCode}
+    - For full documentation and testing, go to /api-docs`
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(message);
 });
 
 /**
@@ -63,18 +63,19 @@ app.get('/', (req,res) => {
  *         description: Error fetching records
  */
 app.get('/records', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM databank');
-    res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Error fetching records:', error);
-    res.status(500).json({ error: 'Error fetching records' });
-  }
+  const query = 'SELECT * FROM databank';
+  db.all(query, [], (err, rows) => {
+    if (err) {
+      console.error('Error fetching records:', err.message);
+      return res.status(500).json({ error: 'Error fetching records' });
+    }
+    res.status(200).json(rows);
+  });
 });
 
 /**
  * @swagger
- * /records/{countryId}:
+ * /records/country/{countryId}:
  *   get:
  *     summary: Get records by country ID
  *     parameters:
@@ -94,19 +95,17 @@ app.get('/records', async (req, res) => {
  */
 app.get('/records/country/:countryId', async (req, res) => {
   const { countryId } = req.params;
-  try {
-    const result = await pool.query(
-      'SELECT * FROM databank WHERE country_code = $1',
-      [countryId]
-    );
-    if (result.rows.length === 0) {
+  const query = 'SELECT * FROM databank WHERE country_code = ?';
+  db.all(query, [countryId], (err, rows) => {
+    if (err) {
+      console.error('Error fetching record:', err.message);
+      return res.status(500).json({ error: 'Error fetching record' });
+    }
+    if (rows.length === 0) {
       return res.status(404).json({ message: 'Record not found' });
     }
-    res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Error fetching record:', error);
-    res.status(500).json({ error: 'Error fetching record' });
-  }
+    res.status(200).json(rows);
+  });
 });
 
 /**
@@ -147,19 +146,17 @@ app.get('/records/country/:countryId', async (req, res) => {
  */
 app.get('/records/indicator/:indicatorCode', async (req, res) => {
   const { indicatorCode } = req.params;
-  try {
-    const result = await pool.query(
-      'SELECT * FROM databank WHERE indicator_code = $1',
-      [indicatorCode]
-    );
-    if (result.rows.length === 0) {
+  const query = 'SELECT * FROM databank WHERE indicator_code = ?';
+  db.all(query, [indicatorCode], (err, rows) => {
+    if (err) {
+      console.error('Error fetching indicator:', err.message);
+      return res.status(500).json({ error: 'Error fetching indicator' });
+    }
+    if (rows.length === 0) {
       return res.status(404).json({ message: 'Indicator not found' });
     }
-    res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Error fetching indicator:', error);
-    res.status(500).json({ error: 'Error fetching indicator' });
-  }
+    res.status(200).json(rows);
+  });
 });
 
 /**
@@ -190,20 +187,17 @@ app.get('/records/indicator/:indicatorCode', async (req, res) => {
  */
 app.get('/records/country/:countryId/:indicatorCode', async (req, res) => {
   const { countryId, indicatorCode } = req.params;
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM databank WHERE country_code = $1 AND indicator_code = $2',
-      [countryId, indicatorCode]
-    );
-    if (result.rows.length === 0) {
+  const query = 'SELECT * FROM databank WHERE country_code = ? AND indicator_code = ?';
+  db.all(query, [countryId, indicatorCode], (err, rows) => {
+    if (err) {
+      console.error('Error fetching record:', err.message);
+      return res.status(500).json({ error: 'Error fetching record' });
+    }
+    if (rows.length === 0) {
       return res.status(404).json({ message: 'Record not found' });
     }
-    res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Error fetching record:', error);
-    res.status(500).json({ error: 'Error fetching record' });
-  }
+    res.status(200).json(rows);
+  });
 });
 
 // Update DB Script
@@ -230,17 +224,12 @@ function updateDB() {
   });
 }
 
+updateDB();
+
 // Runs every year
 cron.schedule('0 0 1 1 *', updateDB);
 
 // Start Server
-connectToDb()
-  .then(() => {
-    updateDB();
-    app.listen(port, 'localhost', () => {
-      console.log(`Server has started on port ${port}`);
-    });
-  })
-  .catch((error) => {
-    console.error('Error initializing server:', error);
-  });
+app.listen(port, () => {
+  console.log(`Server has started on port ${port}`);
+});
